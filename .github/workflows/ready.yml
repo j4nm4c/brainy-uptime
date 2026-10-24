@@ -1,0 +1,28 @@
+# Asks https://brainy.cz/api/ready from outside the server, every ten minutes. A failed run
+# is GitHub's e-mail to the owner (scheduled workflows notify whoever last changed the
+# schedule). The server watches itself too (docs/ops/monitoring.md in the app repository);
+# this is the half that still answers when the whole server is down.
+name: brainy.cz ready
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  ready:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: GET /api/ready
+        run: |
+          # Two tries 30 s apart, so one slow restart is not an alarm.
+          for attempt in 1 2; do
+            code=$(curl -s -o body.txt -w '%{http_code}' --max-time 20 https://brainy.cz/api/ready || echo 000)
+            echo "attempt $attempt: $code"
+            [ "$code" = 200 ] && exit 0
+            sleep 30
+          done
+          head -c 600 body.txt || true
+          echo "::error::brainy.cz/api/ready answered $code twice"
+          exit 1
